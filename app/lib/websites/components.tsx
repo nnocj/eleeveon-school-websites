@@ -3,6 +3,7 @@ import type {
   PublicWebsiteSnapshot,
   WebsiteItem,
   WebsiteMedia,
+  WebsiteNavigationLink,
   WebsitePerson,
   WebsiteSection,
 } from "./types";
@@ -314,18 +315,53 @@ export function SectionRenderer({
   );
 }
 
-function defaultNavigation(snapshot: PublicWebsiteSnapshot) {
-  const links = [
-    { label: "Home", href: "#home" },
-    { label: "About", href: "#about" },
+function defaultNavigation(
+  snapshot: PublicWebsiteSnapshot,
+): WebsiteNavigationLink[] {
+  const links: Array<WebsiteNavigationLink | null> = [
+    {
+      id: "default-home",
+      label: "Home",
+      href: "#home",
+    },
+    {
+      id: "default-about",
+      label: "About",
+      href: "#about",
+    },
     snapshot.subjects.length || snapshot.programs.length
-      ? { label: "Academics", href: snapshot.programs.length ? "#programmes" : "#academics" }
+      ? {
+          id: "default-academics",
+          label: "Academics",
+          href: snapshot.programs.length
+            ? "#programmes"
+            : "#academics",
+        }
       : null,
-    snapshot.teachers.length ? { label: "Teachers", href: "#teachers" } : null,
-    snapshot.gallery.length ? { label: "Gallery", href: "#gallery" } : null,
-    { label: "Contact", href: "#contact" },
+    snapshot.teachers.length
+      ? {
+          id: "default-teachers",
+          label: "Teachers",
+          href: "#teachers",
+        }
+      : null,
+    snapshot.gallery.length
+      ? {
+          id: "default-gallery",
+          label: "Gallery",
+          href: "#gallery",
+        }
+      : null,
+    {
+      id: "default-contact",
+      label: "Contact",
+      href: "#contact",
+    },
   ];
-  return links.filter(Boolean) as { label: string; href: string }[];
+
+  return links.filter(
+    (link): link is WebsiteNavigationLink => link !== null,
+  );
 }
 
 export function SiteChrome({

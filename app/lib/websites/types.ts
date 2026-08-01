@@ -104,6 +104,11 @@ export type PublicWebsiteSnapshot = {
   subjects: WebsiteItem[];
   announcements: WebsiteItem[];
   events: WebsiteItem[];
+  highlights?: WebsiteItem[];
+  organizations?: WebsiteItem[];
+  academicStructures?: WebsiteItem[];
+  classes?: WebsiteItem[];
+  stats?: { students?: number; teachers?: number; classes?: number; subjects?: number; programs?: number };
   gallery: WebsiteMedia[];
   navigation: WebsiteNavigationLink[];
   pages: WebsitePage[];

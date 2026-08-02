@@ -1,31 +1,108 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPublishedWebsite, resolveWebsitePage, WebsiteRenderer } from "@/app/lib/websites";
+
+import {
+  getPublishedWebsite,
+  resolveWebsitePage,
+} from "@/app/lib/websites/api";
+import WebsiteRenderer from "@/app/lib/websites/WebsiteRenderer";
+
 import "@/app/lib/websites/website.css";
 
 type PageProps = {
-  params: Promise<{ slug: string; path?: string[] }>;
+  params: Promise<{
+    slug: string;
+    path?: string[];
+  }>;
 };
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
   const { slug, path } = await params;
-  const snapshot = await getPublishedWebsite(slug).catch(() => null);
-  if (!snapshot) return { title: "School website unavailable" };
-  const page = resolveWebsitePage(snapshot, path);
-  const siteTitle = snapshot.website.seoTitle || snapshot.website.siteName || snapshot.school.name;
+  const payload = await getPublishedWebsite(slug).catch(() => null);
+
+  if (!payload) {
+    return {
+      title: "School website unavailable",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const page = resolveWebsitePage(payload, path);
+  if (!page) {
+    return {
+      title: "Page not found",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const { dataset } = payload;
+  const siteTitle =
+    dataset.website.seoTitle ||
+    dataset.website.siteName ||
+    dataset.school.name;
+
   return {
-    title: page && page.slug !== "home" ? `${page.title} | ${siteTitle}` : siteTitle,
-    description: page?.description || snapshot.website.seoDescription || snapshot.school.description || snapshot.school.motto,
-    robots: snapshot.website.status === "published" ? { index: true, follow: true } : { index: false, follow: false },
-    icons: snapshot.school.logo?.url ? { icon: snapshot.school.logo.url } : undefined,
+    title:
+      page.slug === "home"
+        ? siteTitle
+        : `${page.title} | ${siteTitle}`,
+    description:
+      page.description ||
+      dataset.website.seoDescription ||
+      dataset.website.description ||
+      dataset.school.description ||
+      dataset.school.motto,
+    robots:
+      dataset.website.status === "published"
+        ? { index: true, follow: true }
+        : { index: false, follow: false },
+    icons: dataset.school.logo?.url
+      ? { icon: dataset.school.logo.url }
+      : undefined,
+    openGraph: {
+      title: siteTitle,
+      description:
+        dataset.website.seoDescription ||
+        dataset.website.description ||
+        dataset.school.description,
+      images:
+        dataset.school.banner?.url || dataset.school.logo?.url
+          ? [
+              {
+                url:
+                  dataset.school.banner?.url ||
+                  dataset.school.logo?.url ||
+                  "",
+              },
+            ]
+          : undefined,
+    },
   };
 }
 
-export default async function SchoolWebsitePage({ params }: PageProps) {
+export default async function SchoolWebsitePage({
+  params,
+}: PageProps) {
   const { slug, path } = await params;
-  const snapshot = await getPublishedWebsite(slug);
-  if (!snapshot) notFound();
-  const page = resolveWebsitePage(snapshot, path);
+  const payload = await getPublishedWebsite(slug).catch(() => null);
+
+  if (!payload) notFound();
+
+  const page = resolveWebsitePage(payload, path);
   if (!page) notFound();
-  return <WebsiteRenderer snapshot={snapshot} page={page} />;
+
+  return (
+    <WebsiteRenderer
+      dataset={payload.dataset}
+      settings={payload.templateSettings}
+    />
+  );
 }

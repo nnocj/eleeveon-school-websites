@@ -1,401 +1,99 @@
+"use client";
+
+/**
+ * app/lib/websites/components.tsx
+ * --------------------------------------------------------------------------
+ * Shared public website presentation components. No data fetching occurs here.
+ */
+
 import React from "react";
+
 import type {
-  PublicWebsiteSnapshot,
+  WebsiteDataset,
+  WebsiteGalleryVariant,
   WebsiteItem,
   WebsiteMedia,
-  WebsiteNavigationLink,
   WebsitePerson,
-  WebsiteSection,
+  WebsiteStatistics,
+  WebsiteTeacherVariant,
+  WebsiteTemplateSettings,
 } from "./types";
 
-export function MediaImage({
-  media,
-  className,
-  eager = false,
+function roleLabel(value?: string) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function initials(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+export function WebsiteUnavailable({
+  message = "Website or page not found.",
 }: {
-  media?: WebsiteMedia;
-  className?: string;
-  eager?: boolean;
+  message?: string;
 }) {
-  if (!media?.url) return null;
   return (
-    <img
-      className={className}
-      src={media.url}
-      alt={media.alt || ""}
-      loading={eager ? "eager" : "lazy"}
-    />
+    <main className="website-unavailable" role="status">
+      <strong>Eleeveon School Website</strong>
+      <h1>{message}</h1>
+      <p>
+        This website may not be published yet, or the requested page does not
+        exist.
+      </p>
+    </main>
   );
 }
 
-function dateLabel(value?: number) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return undefined;
-  return new Intl.DateTimeFormat("en-GH", { dateStyle: "medium" }).format(date);
-}
-
-function ItemsGrid({
-  items = [],
-  empty,
+export function WebsiteHeader({
+  dataset,
+  settings,
 }: {
-  items?: WebsiteItem[];
-  empty: string;
+  dataset: WebsiteDataset;
+  settings: WebsiteTemplateSettings;
 }) {
-  if (!items.length) return <p className="ews-empty">{empty}</p>;
-  return (
-    <div className="ews-card-grid">
-      {items.map((item, index) => (
-        <article className="ews-card" key={item.id || `${item.title}-${index}`}>
-          <MediaImage media={item.media} className="ews-card-image" />
-          <div className="ews-card-body">
-            {item.startsAt ? (
-              <small>{dateLabel(item.startsAt)}</small>
-            ) : item.subtitle ? (
-              <small>{item.subtitle}</small>
-            ) : null}
-            <h3>{item.title}</h3>
-            {item.body ? <p>{item.body}</p> : null}
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
+  const name =
+    dataset.website.siteName ||
+    dataset.school.name;
+  const logo =
+    dataset.branch?.logo ||
+    dataset.school.logo;
+  const navigation =
+    dataset.headerNavigation.length
+      ? dataset.headerNavigation
+      : dataset.navigation;
 
-function PeopleGrid({ people }: { people: WebsitePerson[] }) {
-  if (!people.length) {
-    return <p className="ews-empty">Leadership and staff profiles will appear here.</p>;
-  }
   return (
-    <div className="ews-people-grid">
-      {people.map((person, index) => (
-        <article className="ews-person" key={person.id || `${person.name}-${index}`}>
-          {person.photo?.url ? (
-            <MediaImage media={person.photo} className="ews-person-photo" />
+    <header className={`website-header website-header-${settings.headerVariant}`}>
+      <div className="website-header-inner">
+        <a className="website-brand" href="#hero" aria-label={`${name} home`}>
+          {settings.showLogo && logo?.url ? (
+            <img src={logo.url} alt={logo.alt || `${name} logo`} />
           ) : (
-            <div className="ews-person-placeholder">{person.name.slice(0, 1)}</div>
+            <span className="website-brand-initials">{initials(name)}</span>
           )}
-          <h3>{person.name}</h3>
-          <p className="ews-person-title">
-            {person.title || person.role || "Staff member"}
-          </p>
-          {person.bio ? <p>{person.bio}</p> : null}
-        </article>
-      ))}
-    </div>
-  );
-}
 
-function PrincipalWelcome({
-  principal,
-  body,
-}: {
-  principal: WebsitePerson;
-  body?: string;
-}) {
-  return (
-    <div className="ews-principal">
-      <div>
-        {principal.photo?.url ? (
-          <MediaImage media={principal.photo} className="ews-principal-photo" />
-        ) : (
-          <div className="ews-principal-placeholder">{principal.name.slice(0, 1)}</div>
-        )}
-      </div>
-      <div>
-        <p className="ews-quote">“</p>
-        <p className="ews-principal-message">{body || principal.bio}</p>
-        <h3>{principal.name}</h3>
-        <p className="ews-person-title">
-          {principal.title || principal.role || "Headteacher"}
-        </p>
-      </div>
-    </div>
-  );
-}
+          <span>
+            <strong>{name}</strong>
+            {settings.showBranchName && dataset.branch?.name ? (
+              <small>{dataset.branch.name}</small>
+            ) : settings.showMotto && dataset.school.motto ? (
+              <small>{dataset.school.motto}</small>
+            ) : null}
+          </span>
+        </a>
 
-function Gallery({ media }: { media: WebsiteMedia[] }) {
-  if (!media.length) return <p className="ews-empty">School gallery images will appear here.</p>;
-  return (
-    <div className="ews-gallery">
-      {media.map((image, index) => (
-        <MediaImage key={image.id || index} media={image} className="ews-gallery-image" />
-      ))}
-    </div>
-  );
-}
-
-function Statistics({ snapshot }: { snapshot: PublicWebsiteSnapshot }) {
-  const stats = [
-    [snapshot.stats?.students, "Students"],
-    [snapshot.stats?.teachers ?? snapshot.teachers.length, "Teachers"],
-    [snapshot.stats?.classes ?? snapshot.classes?.length, "Classes"],
-    [snapshot.stats?.subjects ?? snapshot.subjects.length, "Subjects"],
-  ].filter(([value]) => typeof value === "number" && value > 0) as [number, string][];
-
-  if (!stats.length) return null;
-  return (
-    <div className="ews-stats">
-      {stats.map(([value, label]) => (
-        <div key={label}>
-          <strong>{value.toLocaleString("en-GH")}</strong>
-          <span>{label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Contact({ snapshot }: { snapshot: PublicWebsiteSnapshot }) {
-  const source = snapshot.branch || snapshot.school;
-  const phone = source.phone || snapshot.school.phone;
-  const email = source.email || snapshot.school.email;
-  const address =
-    source.address ||
-    source.location ||
-    snapshot.school.address ||
-    snapshot.school.location;
-
-  return (
-    <div className="ews-contact-wrap">
-      <div className="ews-contact-grid">
-        <div>
-          <small>Phone</small>
-          <strong>{phone || "Not provided"}</strong>
-          {phone ? <a href={`tel:${phone}`}>Call school</a> : null}
-        </div>
-        <div>
-          <small>Email</small>
-          <strong>{email || "Not provided"}</strong>
-          {email ? <a href={`mailto:${email}`}>Send email</a> : null}
-        </div>
-        <div>
-          <small>Address</small>
-          <strong>{address || "Not provided"}</strong>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function SectionRenderer({
-  section,
-  snapshot,
-}: {
-  section: WebsiteSection;
-  snapshot: PublicWebsiteSnapshot;
-}) {
-  const type = section.sectionType.toLowerCase().replace(/[\s-]+/g, "_");
-  const content = section.content || {};
-  const heading = section.heading || String(content.heading || "");
-  const subheading = section.subheading || String(content.subheading || "");
-  const body = section.body || String(content.body || content.description || "");
-
-  if (["hero", "banner", "masthead"].includes(type)) {
-    const background =
-      section.backgroundMedia ||
-      snapshot.branch?.banner ||
-      snapshot.school.banner ||
-      snapshot.gallery[0];
-    return (
-      <section
-        className="ews-section ews-section-hero"
-        id={section.sectionKey}
-        style={
-          background?.url
-            ? {
-                backgroundImage: `linear-gradient(90deg, rgba(8,18,35,.9), rgba(8,18,35,.36)), url(${background.url})`,
-              }
-            : undefined
-        }
-      >
-        <div className="ews-shell ews-hero-inner">
-          <p className="ews-eyebrow">{subheading || snapshot.branch?.name || "Welcome"}</p>
-          <h1>
-            {heading ||
-              snapshot.website.tagline ||
-              snapshot.school.motto ||
-              `Welcome to ${snapshot.school.name}`}
-          </h1>
-          {body || snapshot.school.description ? (
-            <p>{body || snapshot.school.description}</p>
-          ) : null}
-          <div className="ews-actions">
-            <a className="ews-button" href={String(content.primaryHref || "#about")}>
-              {String(content.primaryLabel || "Explore our school")}
-            </a>
-            <a
-              className="ews-button ews-button-secondary"
-              href={String(content.secondaryHref || "#contact")}
-            >
-              {String(content.secondaryLabel || "Contact us")}
-            </a>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  let rendered: React.ReactNode;
-  if (["statistics", "stats", "overview"].includes(type)) {
-    rendered = <Statistics snapshot={snapshot} />;
-  } else if (["teachers", "staff", "leadership", "team"].includes(type)) {
-    rendered = <PeopleGrid people={snapshot.teachers} />;
-  } else if (["programs", "programmes", "academics"].includes(type)) {
-    rendered = (
-      <ItemsGrid
-        items={section.items?.length ? section.items : snapshot.programs}
-        empty="Academic programmes will appear here."
-      />
-    );
-  } else if (["subjects", "courses"].includes(type)) {
-    rendered = (
-      <ItemsGrid
-        items={section.items?.length ? section.items : snapshot.subjects}
-        empty="Subjects will appear here."
-      />
-    );
-  } else if (["organizations", "organisations", "school_life", "clubs"].includes(type)) {
-    rendered = (
-      <ItemsGrid
-        items={section.items?.length ? section.items : snapshot.organizations}
-        empty="School departments, clubs and communities will appear here."
-      />
-    );
-  } else if (["highlights", "portal_highlights", "campus_life"].includes(type)) {
-    rendered = (
-      <ItemsGrid
-        items={section.items?.length ? section.items : snapshot.highlights}
-        empty="School highlights will appear here."
-      />
-    );
-  } else if (["announcements", "news", "updates"].includes(type)) {
-    rendered = (
-      <ItemsGrid
-        items={section.items?.length ? section.items : snapshot.announcements}
-        empty="There are no published announcements yet."
-      />
-    );
-  } else if (["events", "calendar", "calendar_events"].includes(type)) {
-    rendered = (
-      <ItemsGrid
-        items={section.items?.length ? section.items : snapshot.events}
-        empty="There are no published events yet."
-      />
-    );
-  } else if (["gallery", "media", "photos"].includes(type)) {
-    rendered = <Gallery media={section.media?.length ? section.media : snapshot.gallery} />;
-  } else if (["contact", "contact_details", "location"].includes(type)) {
-    rendered = <Contact snapshot={snapshot} />;
-  } else if (["principal", "headteacher", "welcome_message"].includes(type) && snapshot.principal) {
-    rendered = <PrincipalWelcome principal={snapshot.principal} body={body} />;
-  } else {
-    rendered = body ? (
-      <div className="ews-rich-copy">
-        <p>{body}</p>
-      </div>
-    ) : (
-      <ItemsGrid items={section.items} empty="This section is ready for content." />
-    );
-  }
-
-  return (
-    <section className={`ews-section ews-section-${type}`} id={section.sectionKey}>
-      <div className="ews-shell">
-        {heading || subheading ? (
-          <header className="ews-section-heading">
-            {subheading ? <p className="ews-eyebrow">{subheading}</p> : null}
-            {heading ? <h2>{heading}</h2> : null}
-          </header>
-        ) : null}
-        {rendered}
-      </div>
-    </section>
-  );
-}
-
-function defaultNavigation(
-  snapshot: PublicWebsiteSnapshot,
-): WebsiteNavigationLink[] {
-  const links: Array<WebsiteNavigationLink | null> = [
-    {
-      id: "default-home",
-      label: "Home",
-      href: "#home",
-    },
-    {
-      id: "default-about",
-      label: "About",
-      href: "#about",
-    },
-    snapshot.subjects.length || snapshot.programs.length
-      ? {
-          id: "default-academics",
-          label: "Academics",
-          href: snapshot.programs.length
-            ? "#programmes"
-            : "#academics",
-        }
-      : null,
-    snapshot.teachers.length
-      ? {
-          id: "default-teachers",
-          label: "Teachers",
-          href: "#teachers",
-        }
-      : null,
-    snapshot.gallery.length
-      ? {
-          id: "default-gallery",
-          label: "Gallery",
-          href: "#gallery",
-        }
-      : null,
-    {
-      id: "default-contact",
-      label: "Contact",
-      href: "#contact",
-    },
-  ];
-
-  return links.filter(
-    (link): link is WebsiteNavigationLink => link !== null,
-  );
-}
-
-export function SiteChrome({
-  snapshot,
-  children,
-}: {
-  snapshot: PublicWebsiteSnapshot;
-  children: React.ReactNode;
-}) {
-  const logo = snapshot.branch?.logo || snapshot.school.logo;
-  const contact = snapshot.branch || snapshot.school;
-  const navigation = snapshot.navigation.length
-    ? snapshot.navigation
-    : defaultNavigation(snapshot);
-
-  return (
-    <div className="ews-site">
-      <header className="ews-header">
-        <div className="ews-shell ews-header-inner">
-          <a className="ews-brand" href="#home">
-            {logo?.url ? (
-              <MediaImage media={logo} className="ews-logo" eager />
-            ) : (
-              <span className="ews-logo-placeholder">{snapshot.school.name.slice(0, 1)}</span>
-            )}
-            <span>
-              <strong>{snapshot.website.siteName || snapshot.school.name}</strong>
-              {snapshot.school.motto ? <small>{snapshot.school.motto}</small> : null}
-            </span>
-          </a>
-          <nav className="ews-nav" aria-label="Main navigation">
+        {navigation.length ? (
+          <nav aria-label="Main navigation">
             {navigation.map((link, index) => (
               <a
-                key={link.id || index}
+                key={link.id || `${link.href}-${index}`}
                 href={link.href}
                 target={link.openInNewTab ? "_blank" : undefined}
                 rel={link.openInNewTab ? "noreferrer" : undefined}
@@ -404,26 +102,353 @@ export function SiteChrome({
               </a>
             ))}
           </nav>
-        </div>
-      </header>
-      <main>{children}</main>
-      <footer className="ews-footer">
-        <div className="ews-shell ews-footer-grid">
-          <div className="ews-footer-brand">
-            {logo?.url ? <MediaImage media={logo} className="ews-footer-logo" /> : null}
-            <div>
-              <strong>{snapshot.school.name}</strong>
-              <p>{snapshot.school.motto || snapshot.website.tagline || ""}</p>
-            </div>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
+export function SectionShell({
+  id,
+  eyebrow,
+  title,
+  children,
+}: {
+  id: string;
+  eyebrow?: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className="website-section">
+      <div className="website-section-inner">
+        {eyebrow ? <small className="website-section-eyebrow">{eyebrow}</small> : null}
+        {title ? <h2 className="website-section-title">{title}</h2> : null}
+        {children}
+      </div>
+    </section>
+  );
+}
+
+export function HeroSection({
+  dataset,
+  settings,
+}: {
+  dataset: WebsiteDataset;
+  settings: WebsiteTemplateSettings;
+}) {
+  const schoolName =
+    dataset.website.siteName ||
+    dataset.school.name;
+  const heroImage =
+    dataset.branch?.banner ||
+    dataset.school.banner ||
+    dataset.gallery[0];
+
+  return (
+    <section id="hero" className={`website-hero website-hero-${settings.heroVariant}`}>
+      <div className="website-section-inner website-hero-inner">
+        <div className="website-hero-copy">
+          <small className="website-section-eyebrow">
+            {settings.heroEyebrow || dataset.branch?.name || "Official School Website"}
+          </small>
+          <h1>
+            {settings.heroHeading ||
+              dataset.website.tagline ||
+              dataset.school.motto ||
+              schoolName}
+          </h1>
+          <p>
+            {settings.heroBody ||
+              dataset.website.description ||
+              dataset.school.description ||
+              "A learning community committed to knowledge, character and opportunity."}
+          </p>
+          <div className="website-hero-actions">
+            {settings.primaryActionLabel ? (
+              <a href={settings.primaryActionHref || "#about"}>
+                {settings.primaryActionLabel}
+              </a>
+            ) : null}
+            {settings.secondaryActionLabel ? (
+              <a
+                href={settings.secondaryActionHref || "#contact"}
+                className="secondary"
+              >
+                {settings.secondaryActionLabel}
+              </a>
+            ) : null}
           </div>
-          <div>
-            <p>{contact.address || contact.location || snapshot.school.address || ""}</p>
-            <p>{contact.phone || snapshot.school.phone || ""}</p>
-            <p>{contact.email || snapshot.school.email || ""}</p>
-          </div>
         </div>
-        <div className="ews-powered">Powered by Eleeveon Schools</div>
-      </footer>
-    </div>
+
+        {settings.showHeroImage && heroImage?.url ? (
+          <img
+            src={heroImage.url}
+            alt={heroImage.alt || schoolName}
+            className="website-hero-image"
+          />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+export function StatisticsSection({
+  title,
+  statistics,
+  settings,
+}: {
+  title: string;
+  statistics: WebsiteStatistics;
+  settings: WebsiteTemplateSettings;
+}) {
+  const values = [
+    settings.showStudentCount ? ["Students", statistics.students] : null,
+    settings.showTeacherCount ? ["Teachers", statistics.teachers] : null,
+    settings.showClassCount ? ["Classes", statistics.classes] : null,
+    settings.showSubjectCount ? ["Subjects", statistics.subjects] : null,
+  ].filter((item): item is [string, number] => item !== null);
+
+  if (!values.length) return null;
+
+  return (
+    <SectionShell id="statistics" title={title}>
+      <div className={`website-statistics website-statistics-${settings.statisticsVariant}`}>
+        {values.map(([label, value]) => (
+          <article key={label}>
+            <strong>{value}</strong>
+            <span>{label}</span>
+          </article>
+        ))}
+      </div>
+    </SectionShell>
+  );
+}
+
+export function ContentSection({
+  id,
+  title,
+  body,
+  media,
+}: {
+  id: string;
+  title: string;
+  body?: string;
+  media?: WebsiteMedia;
+}) {
+  if (!body && !media?.url) return null;
+  return (
+    <SectionShell id={id} title={title}>
+      <div className="website-content-section">
+        {body ? <p>{body}</p> : null}
+        {media?.url ? <img src={media.url} alt={media.alt || title} /> : null}
+      </div>
+    </SectionShell>
+  );
+}
+
+export function PrincipalSection({
+  title,
+  principal,
+  message,
+  showPhoto,
+}: {
+  title: string;
+  principal?: WebsitePerson;
+  message?: string;
+  showPhoto: boolean;
+}) {
+  if (!principal && !message) return null;
+  return (
+    <SectionShell id="principal" title={title}>
+      <article className="website-principal">
+        {showPhoto && principal?.photo?.url ? (
+          <img src={principal.photo.url} alt={principal.name} />
+        ) : null}
+        <div>
+          <p>{message || principal?.bio || "Welcome to our school community."}</p>
+          {principal?.name ? <strong>{principal.name}</strong> : null}
+          {principal?.title || principal?.role ? (
+            <span>{roleLabel(principal.title || principal.role)}</span>
+          ) : null}
+        </div>
+      </article>
+    </SectionShell>
+  );
+}
+
+export function ItemGridSection({
+  id,
+  title,
+  items,
+  showCodes = true,
+  showDescriptions = true,
+}: {
+  id: string;
+  title: string;
+  items: WebsiteItem[];
+  showCodes?: boolean;
+  showDescriptions?: boolean;
+}) {
+  if (!items.length) return null;
+  return (
+    <SectionShell id={id} title={title}>
+      <div className="website-item-grid">
+        {items.map((item, index) => (
+          <article key={item.id || `${id}-${index}`}>
+            {item.media?.url ? (
+              <img src={item.media.url} alt={item.media.alt || item.title} />
+            ) : null}
+            {showCodes && item.subtitle ? <small>{item.subtitle}</small> : null}
+            <h3>{item.title}</h3>
+            {showDescriptions && item.body ? <p>{item.body}</p> : null}
+          </article>
+        ))}
+      </div>
+    </SectionShell>
+  );
+}
+
+export function PeopleSection({
+  id,
+  title,
+  people,
+  showPhotos,
+  variant,
+}: {
+  id: string;
+  title: string;
+  people: WebsitePerson[];
+  showPhotos: boolean;
+  variant: WebsiteTeacherVariant;
+}) {
+  if (!people.length) return null;
+  return (
+    <SectionShell id={id} title={title}>
+      <div className={`website-people website-people-${variant}`}>
+        {people.map((person, index) => (
+          <article key={person.id || `${id}-${index}`}>
+            {showPhotos && person.photo?.url ? (
+              <img src={person.photo.url} alt={person.name} />
+            ) : (
+              <span className="website-person-initials">{initials(person.name)}</span>
+            )}
+            <h3>{person.name}</h3>
+            {person.title || person.role ? (
+              <p>{roleLabel(person.title || person.role)}</p>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </SectionShell>
+  );
+}
+
+export function GallerySection({
+  title,
+  media,
+  variant,
+}: {
+  title: string;
+  media: WebsiteMedia[];
+  variant: WebsiteGalleryVariant;
+}) {
+  if (!media.length) return null;
+  return (
+    <SectionShell id="gallery" title={title}>
+      <div className={`website-gallery website-gallery-${variant}`}>
+        {media.map((item, index) =>
+          item.url ? (
+            <img
+              key={item.id || `gallery-${index}`}
+              src={item.url}
+              alt={item.alt || "School gallery image"}
+            />
+          ) : null,
+        )}
+      </div>
+    </SectionShell>
+  );
+}
+
+export function ContactSection({
+  title,
+  dataset,
+  settings,
+}: {
+  title: string;
+  dataset: WebsiteDataset;
+  settings: WebsiteTemplateSettings;
+}) {
+  const phone = dataset.branch?.phone || dataset.school.phone;
+  const email = dataset.branch?.email || dataset.school.email;
+  const address = dataset.branch?.address || dataset.school.address;
+
+  if (
+    (!settings.showPhone || !phone) &&
+    (!settings.showEmail || !email) &&
+    (!settings.showAddress || !address)
+  ) {
+    return null;
+  }
+
+  return (
+    <SectionShell id="contact" title={title}>
+      <div className="website-contact-grid">
+        {settings.showPhone && phone ? (
+          <article>
+            <small>{settings.phoneLabel}</small>
+            <a href={`tel:${phone}`}>{phone}</a>
+          </article>
+        ) : null}
+        {settings.showEmail && email ? (
+          <article>
+            <small>{settings.emailLabel}</small>
+            <a href={`mailto:${email}`}>{email}</a>
+          </article>
+        ) : null}
+        {settings.showAddress && address ? (
+          <article>
+            <small>{settings.addressLabel}</small>
+            <span>{address}</span>
+          </article>
+        ) : null}
+      </div>
+    </SectionShell>
+  );
+}
+
+export function FooterSection({
+  dataset,
+  settings,
+}: {
+  dataset: WebsiteDataset;
+  settings: WebsiteTemplateSettings;
+}) {
+  const name = dataset.website.siteName || dataset.school.name;
+  return (
+    <footer id="footer" className={`website-footer website-footer-${settings.footerVariant}`}>
+      <div className="website-section-inner">
+        <strong>{name}</strong>
+        {settings.footerText ? <p>{settings.footerText}</p> : null}
+        {dataset.footerNavigation.length ? (
+          <nav aria-label="Footer navigation">
+            {dataset.footerNavigation.map((link, index) => (
+              <a
+                key={link.id || `${link.href}-${index}`}
+                href={link.href}
+                target={link.openInNewTab ? "_blank" : undefined}
+                rel={link.openInNewTab ? "noreferrer" : undefined}
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+        ) : null}
+        {settings.showPoweredByEleeveon ? (
+          <small>Powered by Eleeveon Schools</small>
+        ) : null}
+      </div>
+    </footer>
   );
 }

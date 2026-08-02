@@ -19,16 +19,24 @@ type WebsiteTemplateDefinitionV2 = Omit<
 export function ClassicSchoolTemplate({
   dataset,
   settings,
+  page,
+  compact = false,
   previewMode = false,
 }: WebsiteTemplateComponentProps) {
   return (
     <div
-      className="website-template classic-school"
+      className={[
+        "website-template",
+        "classic-school",
+        compact ? "is-compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-preview={previewMode || undefined}
+      data-page={page?.slug || "home"}
       style={
         {
-          "--website-primary":
-            "#1e3a5f",
+          "--website-primary": "#1e3a5f",
           "--website-radius": "8px",
           fontFamily:
             "Georgia, 'Times New Roman', serif",
@@ -38,6 +46,7 @@ export function ClassicSchoolTemplate({
       <WebsiteSectionRenderer
         dataset={dataset}
         settings={settings}
+        page={page}
       />
     </div>
   );
@@ -55,15 +64,12 @@ export const websiteTemplate: WebsiteTemplateDefinitionV2 = {
     contentWidth: "standard",
     density: "comfortable",
     sectionSpacing: "standard",
-    headerVariant:
-      "institutional",
+    headerVariant: "institutional",
     heroVariant: "banner",
     statisticsVariant: "inline",
-    teacherVariant:
-      "compact_list",
+    teacherVariant: "compact_list",
     galleryVariant: "grid",
-    footerVariant:
-      "institutional",
+    footerVariant: "institutional",
   },
   component: ClassicSchoolTemplate,
 };

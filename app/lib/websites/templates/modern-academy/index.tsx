@@ -19,18 +19,25 @@ type WebsiteTemplateDefinitionV2 = Omit<
 export function ModernAcademyTemplate({
   dataset,
   settings,
+  page,
+  compact = false,
   previewMode = false,
 }: WebsiteTemplateComponentProps) {
   return (
     <div
-      className="website-template modern-academy"
+      className={[
+        "website-template",
+        "modern-academy",
+        compact ? "is-compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-preview={previewMode || undefined}
+      data-page={page?.slug || "home"}
       style={
         {
-          "--website-primary":
-            "#2563eb",
-          "--website-radius":
-            "18px",
+          "--website-primary": "#2563eb",
+          "--website-radius": "18px",
           fontFamily:
             "Inter, system-ui, sans-serif",
         } as React.CSSProperties
@@ -39,6 +46,7 @@ export function ModernAcademyTemplate({
       <WebsiteSectionRenderer
         dataset={dataset}
         settings={settings}
+        page={page}
       />
     </div>
   );
@@ -63,8 +71,7 @@ export const websiteTemplate: WebsiteTemplateDefinitionV2 = {
     galleryVariant: "grid",
     footerVariant: "columns",
   },
-  component:
-    ModernAcademyTemplate,
+  component: ModernAcademyTemplate,
 };
 
 export default websiteTemplate;

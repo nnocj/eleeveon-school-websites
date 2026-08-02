@@ -19,24 +19,32 @@ type WebsiteTemplateDefinitionV2 = Omit<
 export function BoldCampusTemplate({
   dataset,
   settings,
+  page,
+  compact = false,
   previewMode = false,
 }: WebsiteTemplateComponentProps) {
   return (
     <div
-      className="website-template bold-campus"
+      className={[
+        "website-template",
+        "bold-campus",
+        compact ? "is-compact" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       data-preview={previewMode || undefined}
+      data-page={page?.slug || "home"}
       style={
         {
-          "--website-primary":
-            "#7c3aed",
-          "--website-radius":
-            "22px",
+          "--website-primary": "#7c3aed",
+          "--website-radius": "22px",
         } as React.CSSProperties
       }
     >
       <WebsiteSectionRenderer
         dataset={dataset}
         settings={settings}
+        page={page}
       />
     </div>
   );
@@ -56,10 +64,8 @@ export const websiteTemplate: WebsiteTemplateDefinitionV2 = {
     sectionSpacing: "standard",
     headerVariant: "bold",
     heroVariant: "full_bleed",
-    statisticsVariant:
-      "large_numbers",
-    teacherVariant:
-      "portrait_cards",
+    statisticsVariant: "large_numbers",
+    teacherVariant: "portrait_cards",
     galleryVariant: "masonry",
     footerVariant: "dark",
   },

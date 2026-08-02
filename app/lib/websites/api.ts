@@ -3,17 +3,19 @@
  * --------------------------------------------------------------------------
  * Server-safe public website API client.
  *
- * Supports both:
- * - the Phase 10 response: { dataset, templateSettings };
- * - the current legacy backend response: WebsiteDataset.
+ * Supports:
+ * - { dataset, templateSettings };
+ * - a direct WebsiteDataset response;
+ * - new pages[].sections responses;
+ * - older flat sections responses normalized into a compatibility home page.
  */
 
 import type {
   PublicWebsiteApiResponse,
   PublicWebsitePayload,
   WebsiteDataset,
+  WebsitePage,
   WebsiteResolvedPage,
-  WebsiteTemplateSettings,
 } from "./types";
 
 import { normalizeWebsiteDataset } from "./data/normalizeWebsiteDataset";
@@ -45,7 +47,8 @@ function normalizePayload(
     : (raw as WebsiteDataset);
 
   const dataset = normalizeWebsiteDataset(
-    rawDataset as WebsiteDataset & Record<string, unknown>,
+    rawDataset as WebsiteDataset &
+      Record<string, unknown>,
   );
 
   const suppliedSettings = isPayload(raw)
@@ -57,14 +60,13 @@ function normalizePayload(
       dataset.website.templateKey,
   );
 
-  const templateSettings = createWebsiteTemplateSettings(
-    suppliedSettings,
-    template,
-  );
-
   return {
     dataset,
-    templateSettings,
+    templateSettings:
+      createWebsiteTemplateSettings(
+        suppliedSettings,
+        template,
+      ),
   };
 }
 
@@ -78,14 +80,18 @@ export async function getPublishedWebsite(
   if (!normalizedSlug) return null;
 
   const response = await fetch(
-    `${API_URL}/public-websites/${encodeURIComponent(normalizedSlug)}`,
+    `${API_URL}/public-websites/${encodeURIComponent(
+      normalizedSlug,
+    )}`,
     {
       headers: {
         Accept: "application/json",
       },
       next: {
         revalidate: 60,
-        tags: [`public-website:${normalizedSlug}`],
+        tags: [
+          `public-website:${normalizedSlug}`,
+        ],
       },
     },
   );
@@ -98,32 +104,100 @@ export async function getPublishedWebsite(
     );
   }
 
-  const raw = (await response.json()) as PublicWebsiteApiResponse;
+  const raw =
+    (await response.json()) as PublicWebsiteApiResponse;
+
   return normalizePayload(raw);
+}
+
+function publishedPage(
+  page: WebsitePage,
+): boolean {
+  return (
+    page.status === "published" &&
+    Boolean(page.slug)
+  );
+}
+
+function normalizePath(
+  path?: string[],
+): string {
+  return (path || [])
+    .map((value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^\/+|\/+$/g, ""),
+    )
+    .filter(Boolean)
+    .join("/");
+}
+
+function fallbackHomePage(
+  dataset: WebsiteDataset,
+): WebsiteResolvedPage {
+  return {
+    id: "automatic-home",
+    websiteSettingId:
+      dataset.websiteSettingId ||
+      dataset.website.id ||
+      "",
+    slug: "home",
+    title:
+      dataset.website.siteName ||
+      dataset.school.name,
+    description:
+      dataset.website.description ||
+      dataset.school.description ||
+      dataset.school.motto,
+    pageType: "home",
+    status: "published",
+    isHomePage: true,
+    displayOrder: 0,
+    sections: dataset.sections || [],
+  };
 }
 
 export function resolveWebsitePage(
   payload: PublicWebsitePayload,
   path?: string[],
 ): WebsiteResolvedPage | null {
-  const segments = (path || [])
-    .map((value) => String(value || "").trim().toLowerCase())
-    .filter(Boolean);
+  const requestedPath = normalizePath(path);
+  const pages = (payload.dataset.pages || [])
+    .filter(publishedPage)
+    .sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder,
+    );
 
-  if (!segments.length || segments[0] === "home" || segments[0] === "index") {
-    return {
-      slug: "home",
-      title:
-        payload.dataset.website.siteName ||
-        payload.dataset.school.name,
-      description:
-        payload.dataset.website.description ||
-        payload.dataset.school.description ||
-        payload.dataset.school.motto,
-    };
+  const wantsHome =
+    !requestedPath ||
+    requestedPath === "home" ||
+    requestedPath === "index";
+
+  if (wantsHome) {
+    const savedHome =
+      pages.find((page) => page.isHomePage) ||
+      pages.find((page) =>
+        ["home", "index"].includes(
+          page.slug.toLowerCase(),
+        ),
+      );
+
+    if (savedHome) return savedHome;
+
+    // Emergency fallback only. This remains useful for published websites that
+    // predate page records or while a deployment is migrating.
+    return fallbackHomePage(payload.dataset);
   }
 
-  // The report-style website system currently publishes one shared single page.
-  // Saved multi-page content can be introduced later without changing this API.
-  return null;
+  return (
+    pages.find(
+      (page) =>
+        page.slug
+          .toLowerCase()
+          .replace(/^\/+|\/+$/g, "") ===
+        requestedPath,
+    ) || null
+  );
 }

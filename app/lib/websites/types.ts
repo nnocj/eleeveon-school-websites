@@ -190,6 +190,7 @@ export type WebsiteSectionSourceType =
 
 export type WebsiteSection = {
   id?: string;
+  pageId?: string;
   sectionKey: string;
   sectionType: string;
   variant?: string;
@@ -204,6 +205,20 @@ export type WebsiteSection = {
   primaryMedia?: WebsiteMedia;
   backgroundMedia?: WebsiteMedia;
   media?: WebsiteMedia[];
+};
+
+
+export type WebsitePage = {
+  id: string;
+  websiteSettingId: string;
+  slug: string;
+  title: string;
+  description?: string;
+  pageType?: string;
+  status: WebsiteStatus;
+  isHomePage: boolean;
+  displayOrder: number;
+  sections: WebsiteSection[];
 };
 
 export type WebsiteDataset = {
@@ -241,7 +256,16 @@ export type WebsiteDataset = {
   headerNavigation: WebsiteNavigationLink[];
   footerNavigation: WebsiteNavigationLink[];
 
-  /** Advanced page-builder records. The default single-page renderer may ignore these. */
+  /**
+   * Published page-builder records. New public rendering should resolve a page
+   * and render that page's sections.
+   */
+  pages: WebsitePage[];
+
+  /**
+   * Flat compatibility view retained for older renderers and older backend
+   * responses. New rendering should prefer pages[].sections.
+   */
   sections: WebsiteSection[];
   generatedAt: number;
 };
@@ -380,6 +404,7 @@ export type WebsiteTemplateDesignDefaults = Pick<
 export type WebsiteTemplateComponentProps = {
   dataset: WebsiteDataset;
   settings: WebsiteTemplateSettings;
+  page?: WebsitePage;
   compact?: boolean;
   previewMode?: boolean;
 };
@@ -483,8 +508,4 @@ export type PublicWebsiteApiResponse =
       settings?: Partial<WebsiteTemplateSettings>;
     });
 
-export type WebsiteResolvedPage = {
-  slug: string;
-  title: string;
-  description?: string;
-};
+export type WebsiteResolvedPage = WebsitePage;

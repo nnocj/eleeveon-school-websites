@@ -12,6 +12,7 @@ import type {
   WebsiteItem,
   WebsiteMedia,
   WebsiteNavigationLink,
+  WebsitePage,
   WebsitePerson,
   WebsiteSchool,
   WebsiteSection,
@@ -236,6 +237,7 @@ function section(value: unknown): WebsiteSection | undefined {
 
   return {
     id: text(row.id) || undefined,
+    pageId: text(row.pageId) || undefined,
     sectionKey,
     sectionType:
       text(row.sectionType) || sectionKey,
@@ -271,6 +273,56 @@ function section(value: unknown): WebsiteSection | undefined {
       .map(media)
       .filter(
         (entry): entry is WebsiteMedia =>
+          Boolean(entry),
+      ),
+  };
+}
+
+
+function page(
+  value: unknown,
+  websiteSettingId: string,
+): WebsitePage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+
+  const row = value as UnknownRecord;
+  const id = text(row.id);
+  const slug =
+    text(row.slug).toLowerCase() ||
+    (row.isHomePage === true ? "home" : "");
+
+  if (!id || !slug) return undefined;
+
+  const rawStatus = text(row.status).toLowerCase();
+  const status =
+    rawStatus === "draft" ||
+    rawStatus === "unpublished" ||
+    rawStatus === "archived"
+      ? rawStatus
+      : "published";
+
+  return {
+    id,
+    websiteSettingId:
+      text(row.websiteSettingId) ||
+      websiteSettingId,
+    slug,
+    title:
+      text(row.title) ||
+      (["home", "index"].includes(slug)
+        ? "Home"
+        : "Page"),
+    description: text(row.description) || undefined,
+    pageType: text(row.pageType) || undefined,
+    status,
+    isHomePage:
+      row.isHomePage === true ||
+      ["home", "index"].includes(slug),
+    displayOrder: number(row.displayOrder),
+    sections: array(row.sections)
+      .map(section)
+      .filter(
+        (entry): entry is WebsiteSection =>
           Boolean(entry),
       ),
   };
@@ -476,6 +528,49 @@ export function normalizeWebsiteDataset(
         Boolean(entry),
     );
 
+  const resolvedWebsiteSettingId =
+    text(
+      input.websiteSettingId ||
+        (input.website as UnknownRecord | undefined)?.id,
+    );
+
+  let pages = array(input.pages)
+    .map((entry) =>
+      page(entry, resolvedWebsiteSettingId),
+    )
+    .filter(
+      (entry): entry is WebsitePage =>
+        Boolean(entry),
+    )
+    .sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder,
+    );
+
+  // Compatibility for older backend responses that only returned a flat
+  // sections array. Keep the relationship usable until every deployment has
+  // upgraded to pages[].sections.
+  if (!pages.length && sections.length) {
+    pages = [
+      {
+        id: "legacy-home",
+        websiteSettingId:
+          resolvedWebsiteSettingId,
+        slug: "home",
+        title: "Home",
+        status: "published",
+        isHomePage: true,
+        displayOrder: 0,
+        sections,
+      },
+    ];
+  }
+
+  const normalizedFlatSections =
+    pages.length
+      ? pages.flatMap((entry) => entry.sections)
+      : sections;
+
   const principal =
     person(input.principal) ||
     teachers.find((entry) =>
@@ -496,10 +591,7 @@ export function normalizeWebsiteDataset(
       text(input.branchId || normalizedBranch?.id) ||
       undefined,
     websiteSettingId:
-      text(
-        input.websiteSettingId ||
-          (input.website as UnknownRecord | undefined)?.id,
-      ) || undefined,
+      resolvedWebsiteSettingId || undefined,
 
     website: identity(
       input.website,
@@ -545,7 +637,8 @@ export function normalizeWebsiteDataset(
     headerNavigation,
     footerNavigation,
 
-    sections,
+    pages,
+    sections: normalizedFlatSections,
     generatedAt:
       number(input.generatedAt) || Date.now(),
   };

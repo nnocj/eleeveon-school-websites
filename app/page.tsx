@@ -27,9 +27,24 @@ type Plan = {
   maxBranches?: number | null;
   maxUsers?: number | null;
   schoolWebsites?: boolean;
+  deploymentMode?: string | null;
+  licenseModel?: string | null;
+  availableAcquisitionModes?: string[] | null;
+  priceOneTime?: number | null;
+  trialDays?: number | null;
   active?: boolean;
   features?: string[] | null;
   metadata?: {
+    pricing?: {
+      mode?: "fixed" | "per_student" | "tiered";
+      billingPeriod?: BillingCycle;
+      perStudentRate?: number;
+      minimumAmount?: number;
+      tiers?: { upTo: number | null; unitPrice: number }[];
+    };
+    publicVisible?: boolean;
+    visibility?: string;
+    trialDays?: number;
     recommended?: boolean;
     badge?: string | null;
     displayOrder?: number | null;
@@ -48,21 +63,21 @@ const API_BASE_URL = (
 const FEATURES: Feature[] = [
   {
     icon: "🏫",
-    title: "School identity",
+    title: "A recognizable school identity",
     description:
-      "Bring your school name, colours, logo, motto and branch information together in one polished public presence.",
+      "Present the school’s approved name, logo, colours, motto, programmes and contact information consistently.",
   },
   {
     icon: "📰",
     title: "News and announcements",
     description:
-      "Publish important updates from Eleeveon Schools and keep families informed without re-entering the same information.",
+      "Share approved news, admission updates and announcements without maintaining disconnected copies of school information.",
   },
   {
     icon: "📷",
     title: "Media and galleries",
     description:
-      "Showcase ceremonies, projects, facilities and daily school life using the same managed media system.",
+      "Organize approved photos of projects, celebrations, activities and school facilities in one public experience.",
   },
   {
     icon: "📚",
@@ -74,34 +89,34 @@ const FEATURES: Feature[] = [
     icon: "📅",
     title: "Calendar-aware",
     description:
-      "Display reopening dates, closing dates, upcoming events and key school activities from one source of truth.",
+      "Keep families informed of reopening dates, events and important school activities when calendar publishing is enabled.",
   },
   {
     icon: "📱",
     title: "Built for every screen",
     description:
-      "Responsive templates give parents, students and prospective families a dependable experience on phones and computers.",
+      "Make essential school information easy to read on mobile phones, tablets and desktop computers.",
   },
 ];
 
 const STEPS = [
   {
     number: "01",
-    title: "Manage the school",
+    title: "Choose an eligible Schools package",
     description:
-      "Update school records, branding, announcements, events and approved public information inside Eleeveon Schools.",
+      "Find a published Cloud, trial or Independent package that includes School Websites. Availability and limitations vary by package.",
   },
   {
     number: "02",
-    title: "Choose the experience",
+    title: "Prepare public school information",
     description:
-      "Select a website template, arrange the pages and sections, then control what should be public.",
+      "Set school branding, choose an available design, and review which school details, media and announcements are approved for public display.",
   },
   {
     number: "03",
-    title: "Publish instantly",
+    title: "Publish and maintain",
     description:
-      "The school website becomes available on its Eleeveon subdomain and stays connected to current school information.",
+      "Publish through the supported Schools website deployment flow. Domain availability and publishing features depend on your package.",
   },
 ];
 
@@ -119,23 +134,57 @@ function normalizePlans(payload: unknown): Plan[] {
   return [];
 }
 
-function planPrice(plan: Plan, cycle: BillingCycle): number {
-  if (cycle === "yearly") return Number(plan.priceYearly || 0);
-
-  if (cycle === "termly") {
-    const configured = Number(plan.priceTermly || 0);
-    return configured > 0
-      ? configured
-      : Number(plan.priceMonthly || 0) * 4;
-  }
-
-  return Number(plan.priceMonthly || 0);
+function websiteEnabled(plan: Plan): boolean {
+  return plan.schoolWebsites === true ||
+    plan.metadata?.featureFlags?.schoolWebsites === true ||
+    plan.features?.includes("schoolWebsites") === true ||
+    plan.metadata?.featureKeys?.includes("schoolWebsites") === true;
 }
 
-function billingCycleLabel(cycle: BillingCycle): string {
-  if (cycle === "termly") return "4 months";
-  if (cycle === "yearly") return "year";
-  return "month";
+function isPublicWebsitePlan(plan: Plan): boolean {
+  if (plan.active === false || !websiteEnabled(plan)) return false;
+  if (plan.metadata?.publicVisible === false || plan.metadata?.visibility === "private") return false;
+  if (plan.licenseModel === "complimentary" || plan.deploymentMode === "private_hosted") return false;
+  const modes = plan.availableAcquisitionModes || [];
+  return !modes.length || modes.some(mode => ["self_service", "trial", "outright", "installments"].includes(mode));
+}
+
+function packageKind(plan: Plan): "trial" | "cloud" | "independent" {
+  if (plan.licenseModel === "trial" || plan.code === "trial") return "trial";
+  if (plan.deploymentMode?.startsWith("independent") || plan.licenseModel === "perpetual") return "independent";
+  return "cloud";
+}
+
+function quoteFor(plan: Plan, students: number, cycle: BillingCycle): { amount: number | null; period: string; note: string } {
+  const kind = packageKind(plan);
+  if (kind === "trial") return { amount: 0, period: "trial", note: `Evaluation access${plan.trialDays || plan.metadata?.trialDays ? ` for ${plan.trialDays || plan.metadata?.trialDays} days` : ""}; limits apply` };
+  if (kind === "independent") {
+    const price = Number(plan.priceOneTime ?? 0);
+    return { amount: price > 0 ? price : null, period: "one-time", note: "Independent installation; activation and purchase require confirmation" };
+  }
+  const pricing = plan.metadata?.pricing;
+  if (pricing && (pricing.mode === "per_student" || pricing.mode === "tiered")) {
+    const period = pricing.billingPeriod || "termly";
+    if (!Number.isSafeInteger(students) || students < 1 || (plan.maxStudents != null && students > plan.maxStudents)) {
+      return { amount: null, period, note: "Choose a student count within this package's limit" };
+    }
+    let amount = 0;
+    if (pricing.mode === "per_student") amount = students * Number(pricing.perStudentRate || 0);
+    else {
+      let previous = 0;
+      for (const tier of pricing.tiers || []) {
+        const top = tier.upTo == null ? students : Math.min(students, tier.upTo);
+        if (top < previous || !Number.isFinite(tier.unitPrice)) return { amount: null, period, note: "Pricing configuration needs review" };
+        amount += (top - previous) * tier.unitPrice;
+        previous = top;
+        if (previous >= students) break;
+      }
+      if (previous < students) return { amount: null, period, note: "Pricing configuration needs review" };
+    }
+    return { amount: Math.round(Math.max(amount, Number(pricing.minimumAmount || 0)) * 100) / 100, period, note: `${students.toLocaleString()} students · indicative quote` };
+  }
+  const fixed = cycle === "yearly" ? Number(plan.priceYearly || 0) : cycle === "termly" ? Number(plan.priceTermly || 0) : Number(plan.priceMonthly || 0);
+  return { amount: fixed > 0 ? fixed : null, period: cycle, note: "Fixed package price" };
 }
 
 function formatMoney(amount: number, currency = "GHS"): string {
@@ -194,6 +243,7 @@ export default function Home() {
   const [plansError, setPlansError] = useState("");
   const [billingCycle, setBillingCycle] =
     useState<BillingCycle>("termly");
+  const [studentCount, setStudentCount] = useState(200);
   const [pricingPage, setPricingPage] = useState(0);
   const [pricingCardsPerPage, setPricingCardsPerPage] = useState(1);
 
@@ -258,14 +308,7 @@ export default function Home() {
         }
 
         const activePlans = normalizePlans(payload)
-          .filter((plan) => plan.active !== false)
-          .filter(
-            (plan) =>
-              plan.schoolWebsites === true ||
-              plan.metadata?.featureFlags?.schoolWebsites === true ||
-              plan.features?.includes("schoolWebsites") ||
-              plan.metadata?.featureKeys?.includes("schoolWebsites"),
-          )
+          .filter(isPublicWebsitePlan)
           .sort((a, b) => {
             const aOrder = Number(
               a.metadata?.displayOrder ?? 999,
@@ -277,8 +320,8 @@ export default function Home() {
             if (aOrder !== bOrder) return aOrder - bOrder;
 
             return (
-              Number(a.priceMonthly || 0) -
-              Number(b.priceMonthly || 0)
+              (quoteFor(a, 200, "termly").amount ?? Infinity) -
+              (quoteFor(b, 200, "termly").amount ?? Infinity)
             );
           });
 
@@ -386,13 +429,13 @@ export default function Home() {
           </div>
 
           <h1 className="mt-6 max-w-3xl text-[2.55rem] font-semibold leading-[1.02] tracking-[-0.052em] sm:mt-7 sm:text-6xl lg:text-7xl">
-            A living digital front door for every school.
+            Your school deserves a public presence as thoughtful as the work inside it.
           </h1>
 
           <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-600 sm:mt-7 sm:text-xl sm:leading-8 dark:text-zinc-300">
-            Eleeveon School Websites turns approved school information into a
-            professional, responsive public website—without making schools
-            manage the same information twice.
+            School Websites is a publishing capability within Eleeveon Schools.
+            It helps schools share approved information, news and school identity
+            through a responsive website, connected to the records they already manage.
           </p>
 
           <div className="mt-7 grid gap-3 sm:mt-9 sm:flex sm:flex-row">
@@ -413,7 +456,7 @@ export default function Home() {
           </div>
 
           <div className="mt-10 flex flex-wrap gap-x-8 gap-y-3 text-sm text-zinc-500 dark:text-zinc-400">
-            <span>Automatic subdomains</span>
+            <span>Package-dependent publishing</span>
             <span>Template-based design</span>
             <span>Mobile responsive</span>
             <span>Shared school data</span>
@@ -496,9 +539,9 @@ export default function Home() {
               More than a separate website builder.
             </h2>
             <p className="mt-5 text-lg leading-8 text-zinc-600 dark:text-zinc-300">
-              School websites can draw from the information already managed in
-              Eleeveon Schools while still giving each institution control over
-              what visitors see.
+              Rather than repeatedly typing the same school details into separate
+              tools, publish selected information from Eleeveon Schools. The school
+              decides what belongs on its public pages and what remains private.
             </p>
           </div>
 
@@ -529,8 +572,9 @@ export default function Home() {
               Update once. Publish with confidence.
             </h2>
             <p className="mt-5 text-lg leading-8 text-zinc-600 dark:text-zinc-300">
-              Eleeveon keeps the internal school workspace and the public
-              website connected while preserving clear publishing controls.
+              Website access depends on the package you choose. Set up approved
+              content, choose a design, then publish with the supported tools.
+              Internal student and financial records remain separate from public content.
             </p>
           </div>
 
@@ -555,268 +599,88 @@ export default function Home() {
         </div>
       </section>
 
-      <section
-        id="pricing"
-        className="relative z-10 border-y border-zinc-200 bg-zinc-50/80 dark:border-white/10 dark:bg-white/2.5"
-      >
+      <section id="pricing" className="relative z-10 border-y border-zinc-200 bg-zinc-50/80 dark:border-white/10 dark:bg-white/2.5">
         <div className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-8 sm:py-24">
-          <div className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div className="max-w-3xl">
-              <p className="text-sm font-semibold text-[#2f6fed]">
-                Pricing
-              </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">
-                The school website is part of the same Eleeveon package.
-              </h2>
-              <p className="mt-5 text-lg leading-8 text-zinc-600 dark:text-zinc-300">
-                Choose a package that includes School Websites together with the
-                connected Eleeveon Schools capabilities enabled for that plan.
-              </p>
-            </div>
-
-            <div className="flex w-full overflow-x-auto rounded-full border border-zinc-200 bg-white p-1 shadow-sm [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden dark:border-white/10 dark:bg-zinc-900">
-              {(
-                ["termly", "monthly", "yearly"] as BillingCycle[]
-              ).map((cycle) => (
-                <button
-                  key={cycle}
-                  type="button"
-                  onClick={() => setBillingCycle(cycle)}
-                  className={`min-w-max flex-1 rounded-full px-4 py-2.5 text-xs font-semibold capitalize transition sm:flex-none sm:px-5 sm:text-sm ${
-                    billingCycle === cycle
-                      ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950"
-                      : "text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white"
-                  }`}
-                >
-                  {cycle === "termly"
-                    ? "Termly · 4 months"
-                    : cycle}
-                </button>
-              ))}
+          <div className="max-w-3xl">
+            <p className="text-sm font-semibold text-[#2f6fed]">Packages with School Websites</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">
+              Choose how your school gets started.
+            </h2>
+            <p className="mt-5 text-lg leading-8 text-zinc-600 dark:text-zinc-300">
+              See published Eleeveon Schools packages that include website publishing.
+              Compare free trials, Cloud subscriptions and eligible Independent editions.
+              Private arrangements and complimentary pilot agreements are not listed.
+            </p>
+          </div>
+          <div className="mt-8 grid gap-4 rounded-3xl border border-zinc-200 bg-white p-5 sm:grid-cols-[1fr_auto] sm:items-end dark:border-white/10 dark:bg-zinc-900">
+            <label className="block">
+              <span className="block text-sm font-semibold">How many students are enrolled?</span>
+              <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Used to estimate any per-student subscription prices.</span>
+              <input type="number" min={1} max={1000000} value={studentCount}
+                onChange={event => {
+                  const next = Number(event.target.value);
+                  setStudentCount(Number.isFinite(next) ? Math.min(1000000, Math.max(1, Math.floor(next))) : 1);
+                }}
+                className="mt-3 w-full max-w-xs rounded-xl border border-zinc-300 bg-transparent px-4 py-3 text-sm outline-none focus:border-[#2f6fed] dark:border-white/20" />
+            </label>
+            <div>
+              <span className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">Compare fixed-price subscriptions by period</span>
+              <div className="mt-2 flex rounded-full border border-zinc-200 p-1 dark:border-white/15">
+                {(["termly", "monthly", "yearly"] as BillingCycle[]).map(cycle => (
+                  <button type="button" key={cycle} onClick={() => setBillingCycle(cycle)}
+                    className={`rounded-full px-4 py-2 text-xs font-semibold capitalize ${billingCycle === cycle ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950" : "text-zinc-500 dark:text-zinc-400"}`}>
+                    {cycle}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-
           {plansLoading ? (
-            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({
-                length: pricingCardsPerPage,
-              }).map((_, item) => (
-                <div
-                  key={item}
-                  className="h-135 animate-pulse rounded-4xl border border-zinc-200 bg-white dark:border-white/10 dark:bg-zinc-900"
-                />
-              ))}
-            </div>
+            <p className="mt-9 text-sm text-zinc-500">Loading published website-enabled packages...</p>
           ) : plansError ? (
-            <div className="mt-12 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-950 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
-              <h3 className="font-semibold">
-                Pricing is temporarily unavailable
-              </h3>
-              <p className="mt-2 text-sm leading-6 opacity-80">
-                {plansError}
-              </p>
+            <div className="mt-9 rounded-2xl border border-amber-200 p-5 text-sm dark:border-amber-500/30">Package information is temporarily unavailable. {plansError}</div>
+          ) : plans.length === 0 ? (
+            <div className="mt-9 rounded-2xl border border-zinc-200 p-6 text-sm dark:border-white/10">
+              No publicly available School Websites packages are published yet. Explore Eleeveon Schools for other available packages.
             </div>
-          ) : plans.length ? (
-            <div className="mt-12">
-              <div className="relative">
-                {pricingPageCount > 1 ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        goToPricingPage(safePricingPage - 1)
-                      }
-                      aria-label="Show previous pricing packages"
-                      className="absolute left-0 top-1/2 z-20 hidden h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-zinc-200 bg-white text-xl shadow-lg transition hover:bg-zinc-50 lg:grid dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                    >
-                      ‹
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        goToPricingPage(safePricingPage + 1)
-                      }
-                      aria-label="Show next pricing packages"
-                      className="absolute right-0 top-1/2 z-20 hidden h-11 w-11 translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-zinc-200 bg-white text-xl shadow-lg transition hover:bg-zinc-50 lg:grid dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                    >
-                      ›
-                    </button>
-                  </>
-                ) : null}
-
-                <div
-                  className={`grid items-stretch gap-5 transition-all duration-300 ${
-                    pricingCardsPerPage === 3
-                      ? "lg:grid-cols-3"
-                      : pricingCardsPerPage === 2
-                        ? "sm:grid-cols-2"
-                        : "grid-cols-1"
-                  }`}
-                >
-                  {visiblePricingPlans.map((plan) => {
-                    const index = plans.findIndex(
-                      (item) => item.id === plan.id,
-                    );
-                    const price = planPrice(plan, billingCycle);
-                    const currency = plan.currency || "GHS";
-                    const monthlyPrice = Number(
-                      plan.priceMonthly || 0,
-                    );
-                    const termlyPrice = planPrice(
-                      plan,
-                      "termly",
-                    );
-                    const yearlyPrice = Number(
-                      plan.priceYearly || 0,
-                    );
-                    const termlySaving =
-                      monthlyPrice * 4 - termlyPrice;
-                    const yearlySaving =
-                      monthlyPrice * 12 - yearlyPrice;
-                    const recommended =
-                      plan.metadata?.recommended === true ||
-                      index === Math.min(1, plans.length - 1);
-
-                    const signupUrl = new URL(
-                      "https://schools.eleeveon.com",
-                    );
-                    signupUrl.searchParams.set(
-                      "planId",
-                      plan.id,
-                    );
-                    signupUrl.searchParams.set(
-                      "billingCycle",
-                      billingCycle,
-                    );
-                    signupUrl.searchParams.set(
-                      "source",
-                      "school-websites-pricing",
-                    );
-
+          ) : (
+            <>
+              <div className="relative mt-9">
+                <div className={`grid gap-5 ${pricingCardsPerPage === 3 ? "lg:grid-cols-3" : pricingCardsPerPage === 2 ? "sm:grid-cols-2" : ""}`}>
+                  {visiblePricingPlans.map(plan => {
+                    const kind = packageKind(plan);
+                    const quote = quoteFor(plan, studentCount, billingCycle);
+                    const canStartTrial = kind === "trial" && (plan.availableAcquisitionModes?.includes("trial") || plan.code === "trial");
+                    const planUrl = new URL("https://schools.eleeveon.com");
+                    planUrl.searchParams.set("planId", plan.id);
+                    planUrl.searchParams.set("source", "school-websites-pricing");
+                    // Linking to the public catalogue avoids implying unsupported instant checkout for Independent packages.
+                    planUrl.hash = "pricing";
                     return (
-                      <article
-                        key={plan.id}
-                        className={`relative flex min-h-full flex-col overflow-hidden rounded-4xl border bg-white p-6 transition duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-zinc-950/8 dark:bg-zinc-900 ${
-                          recommended
-                            ? "border-[#2f6fed] shadow-xl shadow-[#2f6fed]/10"
-                            : "border-zinc-200 dark:border-white/10"
-                        }`}
-                      >
-                        {recommended ? (
-                          <div className="absolute right-5 top-5 rounded-full bg-[#2f6fed] px-3 py-1 text-xs font-semibold text-white">
-                            {plan.metadata?.badge || "Popular"}
-                          </div>
-                        ) : null}
-
-                        <div className="pr-20">
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#2f6fed]">
-                            {plan.code}
-                          </p>
-                          <h3 className="mt-3 text-2xl font-semibold tracking-tight">
-                            {plan.name}
-                          </h3>
-                        </div>
-
-                        <p className="mt-4 min-h-18 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-                          {plan.description ||
-                            "An Eleeveon Schools package that includes a connected professional school website."}
+                      <article key={plan.id} className="flex h-full flex-col rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-[#2f6fed]">
+                          {kind === "trial" ? "Try before you decide" : kind === "independent" ? "Independent deployment" : "Cloud subscription"}
                         </p>
-
-                        <div className="mt-6">
-                          <div className="flex items-end gap-2">
-                            <strong className="text-4xl font-semibold tracking-tighter">
-                              {formatMoney(price, currency)}
-                            </strong>
-                            <span className="pb-1 text-sm text-zinc-500 dark:text-zinc-400">
-                              /{billingCycleLabel(billingCycle)}
-                            </span>
-                          </div>
-
-                          {billingCycle === "termly" &&
-                          termlySaving > 0 ? (
-                            <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                              Save{" "}
-                              {formatMoney(
-                                termlySaving,
-                                currency,
-                              )}{" "}
-                              compared with four monthly payments.
-                            </p>
-                          ) : billingCycle === "yearly" &&
-                            yearlySaving > 0 ? (
-                            <p className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                              Save{" "}
-                              {formatMoney(
-                                yearlySaving,
-                                currency,
-                              )}{" "}
-                              compared with twelve monthly payments.
-                            </p>
-                          ) : (
-                            <p className="mt-2 text-xs text-zinc-400">
-                              Includes the connected school website
-                              capability enabled for this package.
-                            </p>
-                          )}
+                        <h3 className="mt-3 text-2xl font-semibold">{plan.name}</h3>
+                        <p className="mt-3 text-sm leading-6 text-zinc-500 dark:text-zinc-400">{plan.description || "Includes the School Websites capability in Eleeveon Schools."}</p>
+                        <div className="mt-6 border-y border-zinc-100 py-5 dark:border-white/10">
+                          <strong className="text-3xl font-semibold tracking-tight">
+                            {quote.amount == null ? "Ask for a quote" : formatMoney(quote.amount, plan.currency || "GHS")}
+                          </strong>
+                          <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">{quote.period === "one-time" ? "one-time" : quote.period === "trial" ? "trial access" : `per ${quote.period}`}</span>
+                          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{quote.note}</p>
                         </div>
-
-                        <div className="mt-6 grid grid-cols-3 gap-2">
-                          {[
-                            [plan.maxStudents, "students"],
-                            [plan.maxBranches, "branches"],
-                            [plan.maxUsers, "users"],
-                          ].map(([value, label]) => (
-                            <div
-                              key={String(label)}
-                              className="rounded-2xl bg-zinc-50 px-3 py-3 dark:bg-white/5"
-                            >
-                              <strong className="block text-sm font-semibold">
-                                {value == null
-                                  ? "Flexible"
-                                  : Number(
-                                      value,
-                                    ).toLocaleString()}
-                              </strong>
-                              <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
-                                {label}
-                              </span>
+                        <div className="mt-5 grid grid-cols-3 gap-2">
+                          {([[plan.maxStudents, "students"], [plan.maxBranches, "branches"], [plan.maxUsers, "users"]] as const).map(([value, label]) => (
+                            <div key={label} className="rounded-xl bg-zinc-50 p-3 dark:bg-white/5">
+                              <strong className="block text-sm">{value == null ? "Flexible" : value.toLocaleString()}</strong>
+                              <span className="text-xs text-zinc-500 dark:text-zinc-400">{label}</span>
                             </div>
                           ))}
                         </div>
-
-                        <div className="mt-7 border-t border-zinc-200 pt-6 dark:border-white/10">
-                          <ul className="space-y-3">
-                            {[
-                              "Professional school website",
-                              "Automatic Eleeveon subdomain",
-                              "Connected school identity and content",
-                              "Responsive templates",
-                              "News, calendar and media publishing",
-                            ].map((feature) => (
-                              <li
-                                key={feature}
-                                className="flex gap-3 text-sm leading-5 text-zinc-700 dark:text-zinc-200"
-                              >
-                                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                  ✓
-                                </span>
-                                <span>{feature}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
                         <div className="mt-auto pt-7">
-                          <a
-                            href={signupUrl.toString()}
-                            className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition hover:-translate-y-0.5 ${
-                              recommended
-                                ? "bg-[#2f6fed] text-white hover:bg-[#245ed0]"
-                                : "bg-zinc-950 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
-                            }`}
-                          >
-                            Create account with {plan.name}
+                          <a href={planUrl.toString()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-zinc-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-zinc-950">
+                            {canStartTrial ? "Explore free trial" : kind === "independent" ? "Explore deployment" : "Review package"}
                             <ArrowIcon />
                           </a>
                         </div>
@@ -825,75 +689,19 @@ export default function Home() {
                   })}
                 </div>
               </div>
-
-              {pricingPageCount > 1 ? (
-                <div className="mt-7 flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      goToPricingPage(safePricingPage - 1)
-                    }
-                    aria-label="Previous pricing page"
-                    className="mr-2 grid h-9 w-9 place-items-center rounded-full border border-zinc-200 bg-white text-lg shadow-sm transition hover:bg-zinc-50 lg:hidden dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                  >
-                    ‹
-                  </button>
-
-                  {Array.from({
-                    length: pricingPageCount,
-                  }).map((_, page) => (
-                    <button
-                      key={page}
-                      type="button"
-                      onClick={() =>
-                        goToPricingPage(page)
-                      }
-                      aria-label={`Show pricing page ${page + 1}`}
-                      aria-current={
-                        safePricingPage === page
-                          ? "true"
-                          : undefined
-                      }
-                      className={`h-2.5 rounded-full transition-all ${
-                        safePricingPage === page
-                          ? "w-8 bg-[#2f6fed]"
-                          : "w-2.5 bg-zinc-300 hover:bg-zinc-400 dark:bg-zinc-700 dark:hover:bg-zinc-600"
-                      }`}
-                    />
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      goToPricingPage(safePricingPage + 1)
-                    }
-                    aria-label="Next pricing page"
-                    className="ml-2 grid h-9 w-9 place-items-center rounded-full border border-zinc-200 bg-white text-lg shadow-sm transition hover:bg-zinc-50 lg:hidden dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                  >
-                    ›
-                  </button>
+              {pricingPageCount > 1 && (
+                <div className="mt-7 flex items-center justify-center gap-3">
+                  <button type="button" onClick={() => goToPricingPage(safePricingPage - 1)} className="rounded-full border px-4 py-2 text-sm dark:border-white/20" aria-label="Previous packages">Previous</button>
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">{safePricingPage + 1} / {pricingPageCount}</span>
+                  <button type="button" onClick={() => goToPricingPage(safePricingPage + 1)} className="rounded-full border px-4 py-2 text-sm dark:border-white/20" aria-label="Next packages">Next</button>
                 </div>
-              ) : null}
-
-              <p className="mt-3 text-center text-xs text-zinc-400">
-                {pricingCardsPerPage === 1
-                  ? "Use the dots or arrows to view each package."
-                  : pricingCardsPerPage === 2
-                    ? "Two packages are shown at a time."
-                    : "Three packages are shown at a time."}
-              </p>
-            </div>
-          ) : (
-            <div className="mt-12 rounded-3xl border border-dashed border-zinc-300 bg-white p-8 text-center dark:border-white/15 dark:bg-zinc-900">
-              <h3 className="font-semibold">
-                Website-enabled packages are being prepared
-              </h3>
-              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                Packages that include School Websites will appear
-                automatically when published from Eleeveon Schools.
-              </p>
-            </div>
+              )}
+            </>
           )}
+          <p className="mt-6 text-xs leading-6 text-zinc-500 dark:text-zinc-400">
+            Student-based prices are estimates, not payment authorization. The final quote is confirmed by Eleeveon Schools.
+            Website access is subject to each package's published capabilities, installation requirements and service availability.
+          </p>
         </div>
       </section>
 
@@ -908,9 +716,9 @@ export default function Home() {
                 Run the school. Serve the community. Build what comes next.
               </h2>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-white/70 dark:text-zinc-600">
-                Eleeveon School Websites extends the same school identity,
-                information and digital infrastructure already used across the
-                Eleeveon Schools platform.
+                Start with the deployment and commercial arrangement that suits
+                your school. School Websites is one optional capability of the
+                wider Eleeveon Schools system, alongside school reporting and records.
               </p>
             </div>
 

@@ -612,29 +612,39 @@ export default function Home() {
               Private arrangements and complimentary pilot agreements are not listed.
             </p>
           </div>
-          <div className="mt-8 grid gap-4 rounded-3xl border border-zinc-200 bg-white p-5 sm:grid-cols-[1fr_auto] sm:items-end dark:border-white/10 dark:bg-zinc-900">
-            <label className="block">
-              <span className="block text-sm font-semibold">How many students are enrolled?</span>
-              <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">Used to estimate any per-student subscription prices.</span>
-              <input type="number" min={1} max={1000000} value={studentCount}
+          <div className="mt-8 grid gap-5 rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] dark:border-white/10 dark:bg-zinc-900">
+            <div>
+              <label htmlFor="websites-student-count" className="block text-sm font-semibold">How many students are enrolled?</label>
+              <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">Your quote appears beside this field, even when the corresponding package card is on another slide.</p>
+              <input id="websites-student-count" type="number" min={1} max={1000000} value={studentCount}
                 onChange={event => {
                   const next = Number(event.target.value);
                   setStudentCount(Number.isFinite(next) ? Math.min(1000000, Math.max(1, Math.floor(next))) : 1);
                 }}
-                className="mt-3 w-full max-w-xs rounded-xl border border-zinc-300 bg-transparent px-4 py-3 text-sm outline-none focus:border-[#2f6fed] dark:border-white/20" />
-            </label>
-            <div>
-              <span className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">Compare fixed-price subscriptions by period</span>
-              <div className="mt-2 flex rounded-full border border-zinc-200 p-1 dark:border-white/15">
-                {(["termly", "monthly", "yearly"] as BillingCycle[]).map(cycle => (
-                  <button type="button" key={cycle} onClick={() => setBillingCycle(cycle)}
-                    className={`rounded-full px-4 py-2 text-xs font-semibold capitalize ${billingCycle === cycle ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950" : "text-zinc-500 dark:text-zinc-400"}`}>
-                    {cycle}
-                  </button>
-                ))}
-              </div>
+                className="mt-4 w-full max-w-60 rounded-xl border border-zinc-300 bg-transparent px-4 py-3 text-lg font-semibold outline-none focus:border-[#2f6fed] dark:border-white/20" />
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Estimates reflect only published packages that include School Websites.</p>
+            </div>
+            <div className="rounded-2xl border border-[#2f6fed]/20 bg-[#2f6fed]/5 p-5 dark:border-[#2f6fed]/30 dark:bg-[#2f6fed]/10" aria-live="polite" aria-atomic="true">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#2f6fed]">Your instant quotation</p>
+              {plansLoading ? <p className="mt-3 text-sm text-zinc-500">Loading published prices…</p> : plansError ? <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">Unable to load pricing: {plansError}</p> : (
+                (() => {
+                  const studentPricedPlans = plans.filter(plan => ["per_student", "tiered"].includes(plan.metadata?.pricing?.mode || "") && packageKind(plan) === "cloud");
+                  if (!studentPricedPlans.length) return <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">No per-student package with School Websites is currently published. You can compare the available fixed-price options below, or visit Eleeveon Schools for all packages.</p>;
+                  return <div className="mt-3 space-y-3">{studentPricedPlans.map(plan => {
+                    const quote = quoteFor(plan, studentCount, billingCycle);
+                    return <div key={plan.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/70 pb-3 last:border-0 last:pb-0 dark:border-white/10">
+                      <div><p className="text-sm font-semibold">{plan.name}</p><p className="text-xs text-zinc-500 dark:text-zinc-400">{studentCount.toLocaleString()} students · {quote.period}</p></div>
+                      <strong className="text-2xl font-semibold tracking-tight">{quote.amount == null ? "Request quote" : formatMoney(quote.amount, plan.currency || "GHS")}</strong>
+                    </div>;
+                  })}</div>;
+                })()
+              )}
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Indicative prices only; Eleeveon verifies the final quote before payment.</p>
+              <a href="#website-package-list" className="mt-3 inline-flex text-sm font-semibold text-[#2f6fed] hover:underline">Explore package details ↓</a>
             </div>
           </div>
+          <div id="website-package-list" className="scroll-mt-24" />
+
           {plansLoading ? (
             <p className="mt-9 text-sm text-zinc-500">Loading published website-enabled packages...</p>
           ) : plansError ? (

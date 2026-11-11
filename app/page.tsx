@@ -614,15 +614,16 @@ export default function Home() {
           </div>
           <div className="mt-8 grid gap-5 rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] dark:border-white/10 dark:bg-zinc-900">
             <div>
-              <label htmlFor="websites-student-count" className="block text-sm font-semibold">How many students are enrolled?</label>
-              <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">Your quote appears beside this field, even when the corresponding package card is on another slide.</p>
+              <label htmlFor="websites-student-count" className="block text-sm font-semibold">How many student places would you like to prepay?</label>
+              <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">Choose your future student capacity, even if you have not yet enrolled anyone. Your estimate appears alongside the selector.</p>
               <input id="websites-student-count" type="number" min={1} max={1000000} value={studentCount}
                 onChange={event => {
                   const next = Number(event.target.value);
                   setStudentCount(Number.isFinite(next) ? Math.min(1000000, Math.max(1, Math.floor(next))) : 1);
                 }}
                 className="mt-4 w-full max-w-60 rounded-xl border border-zinc-300 bg-transparent px-4 py-3 text-lg font-semibold outline-none focus:border-[#2f6fed] dark:border-white/20" />
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Estimates reflect only published packages that include School Websites.</p>
+              <div className="mt-3 flex flex-wrap gap-2">{[50, 100, 200, 500].map(quantity => <button type="button" key={quantity} onClick={() => setStudentCount(quantity)} className={`rounded-full border px-3 py-2 text-xs font-semibold ${studentCount === quantity ? "border-[#2f6fed] bg-[#2f6fed] text-white" : "border-zinc-200 dark:border-white/15"}`}>{quantity}</button>)}</div>
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">The final payable amount is calculated in the secure Eleeveon Schools Owner checkout.</p>
             </div>
             <div className="rounded-2xl border border-[#2f6fed]/20 bg-[#2f6fed]/5 p-5 dark:border-[#2f6fed]/30 dark:bg-[#2f6fed]/10" aria-live="polite" aria-atomic="true">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#2f6fed]">Your instant quotation</p>
@@ -663,6 +664,7 @@ export default function Home() {
                     const canStartTrial = kind === "trial" && (plan.availableAcquisitionModes?.includes("trial") || plan.code === "trial");
                     const planUrl = new URL("https://schools.eleeveon.com");
                     planUrl.searchParams.set("planId", plan.id);
+                    planUrl.searchParams.set("students", String(studentCount));
                     planUrl.searchParams.set("source", "school-websites-pricing");
                     // Linking to the public catalogue avoids implying unsupported instant checkout for Independent packages.
                     planUrl.hash = "pricing";
